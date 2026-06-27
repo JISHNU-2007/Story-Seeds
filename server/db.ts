@@ -28,6 +28,8 @@ export interface StorySeed {
   createdAt: string;
   likes?: number;
   likedBy?: string[]; // array of writerIds
+  fires?: number;
+  firedBy?: string[]; // array of writerIds
 }
 
 // Memory / Local file fallback
@@ -83,9 +85,21 @@ let mongoDb: Db | null = null;
 let isMongoActive = false;
 
 export async function initDb() {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI?.trim();
   if (!uri) {
     console.log("MONGODB_URI is not set. Falling back to local JSON database storage (db.json).");
+    return;
+  }
+
+  // Check if it's a known placeholder or invalid scheme
+  const isPlaceholder = 
+    uri === "YOUR_MONGODB_URI" || 
+    uri.includes("username:password") || 
+    uri.includes("cluster.mongodb.net") ||
+    (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://"));
+
+  if (isPlaceholder) {
+    console.log("MONGODB_URI is a placeholder or has an invalid scheme. Falling back to local JSON database storage (db.json).");
     return;
   }
 
@@ -100,7 +114,7 @@ export async function initDb() {
     isMongoActive = true;
     console.log("Successfully connected to MongoDB Atlas!");
   } catch (error) {
-    console.error("Failed to connect to MongoDB. Falling back to local JSON database. Error:", error);
+    console.warn("Failed to connect to MongoDB. Falling back to local JSON database.");
     isMongoActive = false;
   }
 }
@@ -257,7 +271,7 @@ export async function getSeedsByWriter(writerId: string): Promise<StorySeed[]> {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-export async function createSeed(seedData: Omit<StorySeed, "id" | "createdAt" | "likes" | "likedBy">): Promise<StorySeed> {
+export async function createSeed(seedData: Omit<StorySeed, "id" | "createdAt" | "likes" | "likedBy" | "fires" | "firedBy">): Promise<StorySeed> {
   const id = "seed_" + Math.random().toString(36).substring(2, 15);
   const createdAt = new Date().toISOString();
   
@@ -267,6 +281,8 @@ export async function createSeed(seedData: Omit<StorySeed, "id" | "createdAt" | 
     createdAt,
     likes: 0,
     likedBy: [],
+    fires: 0,
+    firedBy: [],
   };
 
   if (isMongoActive && mongoDb) {
@@ -326,6 +342,50 @@ export async function toggleLikeSeed(seedId: string, writerId: string): Promise<
 
   seed.likedBy = likedBy;
   seed.likes = likedBy.length;
+  
+  writeLocalDb(db);
+  return seed;
+}
+
+export async function toggleFireSeed(seedId: string, writerId: string): Promise<StorySeed | null> {
+  if (isMongoActive && mongoDb) {
+    try {
+      const coll = mongoDb.collection<StorySeed>("seeds");
+      const seed = await coll.findOne({ id: seedId });
+      if (seed) {
+        const firedBy = seed.firedBy || [];
+        const index = firedBy.indexOf(writerId);
+        if (index > -1) {
+          firedBy.splice(index, 1);
+        } else {
+          firedBy.push(writerId);
+        }
+
+        const fires = firedBy.length;
+        await coll.updateOne({ id: seedId }, { $set: { firedBy, fires } });
+        return { ...seed, firedBy, fires };
+      }
+    } catch (err) {
+      console.error("MongoDB toggleFireSeed failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
+  }
+
+  const db = readLocalDb();
+  const seedIndex = db.seeds.findIndex(s => s.id === seedId);
+  if (seedIndex === -1) return null;
+
+  const seed = db.seeds[seedIndex];
+  const firedBy = seed.firedBy || [];
+  const index = firedBy.indexOf(writerId);
+  if (index > -1) {
+    firedBy.splice(index, 1);
+  } else {
+    firedBy.push(writerId);
+  }
+
+  seed.firedBy = firedBy;
+  seed.fires = firedBy.length;
   
   writeLocalDb(db);
   return seed;

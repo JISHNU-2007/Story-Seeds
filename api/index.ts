@@ -11,6 +11,7 @@ import {
   getSeedsByWriter, 
   createSeed, 
   toggleLikeSeed, 
+  toggleFireSeed,
   deleteSeed,
   getAllWriters,
   toggleFriend
@@ -42,6 +43,74 @@ function getAi() {
     });
   }
   return aiInstance;
+}
+
+// Robust Retry Helper for transient errors (503 Service Unavailable, 429 Too Many Requests, etc.)
+async function generateContentWithRetry(ai: any, params: any, retries = 2, delay = 1000): Promise<any> {
+  try {
+    return await ai.models.generateContent(params);
+  } catch (error: any) {
+    const errorStr = String(error.message || error);
+    const isTransient = 
+      errorStr.includes("503") || 
+      errorStr.includes("502") || 
+      errorStr.includes("429") || 
+      errorStr.includes("UNAVAILABLE") || 
+      errorStr.includes("high demand") || 
+      errorStr.includes("RESOURCE_EXHAUSTED") || 
+      errorStr.includes("overloaded") || 
+      errorStr.includes("temporary") ||
+      errorStr.includes("Service Unavailable") ||
+      errorStr.includes("Too Many Requests");
+
+    if (isTransient && retries > 0) {
+      console.warn(`Transient Gemini error encountered: "${errorStr.substring(0, 150)}". Retrying in ${delay}ms... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return generateContentWithRetry(ai, params, retries - 1, delay * 1.5);
+    }
+    throw error;
+  }
+}
+
+// Convert ugly raw JSON/technical error dumps into clear, warm, human-friendly messages
+function formatGeminiError(error: any): string {
+  const rawMsg = error.message || String(error);
+  
+  try {
+    const jsonMatch = rawMsg.match(/\{.*\}/s);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.error) {
+        const code = parsed.error.code;
+        const message = parsed.error.message;
+        const status = parsed.error.status;
+
+        if (code === 503 || status === "UNAVAILABLE") {
+          return "The AI Muse is currently experiencing exceptionally high demand. Spikes in demand are usually temporary—please wait a few seconds and try generating your story seed again.";
+        }
+        if (code === 429 || status === "RESOURCE_EXHAUSTED") {
+          return "The AI Muse has reached its rate limit. Please wait a short moment before composing another seed.";
+        }
+        if (message) {
+          return message;
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore and fallback
+  }
+
+  if (rawMsg.includes("503") || rawMsg.includes("UNAVAILABLE") || rawMsg.includes("high demand")) {
+    return "The AI Muse is currently experiencing exceptionally high demand. Spikes in demand are usually temporary—please wait a few seconds and try generating your story seed again.";
+  }
+  if (rawMsg.includes("429") || rawMsg.includes("RESOURCE_EXHAUSTED") || rawMsg.includes("rate limit")) {
+    return "The AI Muse has reached its rate limit. Please wait a short moment before composing another seed.";
+  }
+  if (rawMsg.includes("API_KEY") || rawMsg.includes("API key")) {
+    return "Gemini API Key configuration issue. Please contact the administrator or check the Secrets setup.";
+  }
+
+  return rawMsg;
 }
 
 // Initialize Database (Atlas Connection if URI available, else fallback to JSON file)
@@ -213,7 +282,7 @@ It must set up a conflict or mystery without resolving it. Write in an evocative
 Keep it strictly under 5-6 sentences (one paragraph). Output ONLY the paragraph, nothing else.`;
 
     const ai = getAi();
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry(ai, {
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
@@ -246,7 +315,8 @@ Keep it strictly under 5-6 sentences (one paragraph). Output ONLY the paragraph,
     res.status(201).json(seed);
   } catch (error: any) {
     console.error("Seed generation error:", error);
-    res.status(500).json({ error: error.message || "Failed to generate story seed." });
+    const friendlyError = formatGeminiError(error);
+    res.status(500).json({ error: friendlyError });
   }
 });
 
@@ -278,6 +348,23 @@ app.post("/api/seeds/:id/like", async (req, res) => {
       return res.status(400).json({ error: "Writer ID is required to like a seed." });
     }
     const updatedSeed = await toggleLikeSeed(req.params.id, writerId);
+    if (!updatedSeed) {
+      return res.status(404).json({ error: "Seed not found." });
+    }
+    res.json(updatedSeed);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Toggle Fire reaction on a Seed
+app.post("/api/seeds/:id/fire", async (req, res) => {
+  try {
+    const { writerId } = req.body;
+    if (!writerId) {
+      return res.status(400).json({ error: "Writer ID is required to fire reaction." });
+    }
+    const updatedSeed = await toggleFireSeed(req.params.id, writerId);
     if (!updatedSeed) {
       return res.status(404).json({ error: "Seed not found." });
     }

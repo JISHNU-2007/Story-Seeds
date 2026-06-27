@@ -1,19 +1,22 @@
 import React, { useState } from "react";
-import { Heart, Copy, Check, Trash2, Calendar, User, Sparkles, AlertCircle } from "lucide-react";
+import { Heart, Copy, Check, Trash2, Calendar, User, Sparkles, AlertCircle, Flame, Share2 } from "lucide-react";
 import { motion } from "motion/react";
-import { StorySeed, Writer } from "../types";
+import { StorySeed, Writer, AppTheme } from "../types";
 
 interface SeedCardProps {
   seed: StorySeed;
   currentWriter: Writer | null;
   locallyCreatedSeedIds?: string[];
   onLikeToggle: (seedId: string) => void;
+  onFireToggle: (seedId: string) => void;
   onDelete: (seedId: string) => void;
   key?: string;
+  activeTheme?: AppTheme;
 }
 
-export default function SeedCard({ seed, currentWriter, locallyCreatedSeedIds = [], onLikeToggle, onDelete }: SeedCardProps) {
+export default function SeedCard({ seed, currentWriter, locallyCreatedSeedIds = [], onLikeToggle, onFireToggle, onDelete, activeTheme }: SeedCardProps) {
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const handleCopy = async () => {
@@ -26,7 +29,34 @@ export default function SeedCard({ seed, currentWriter, locallyCreatedSeedIds = 
     }
   };
 
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}?seed=${seed.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Story Seed Sanctuary",
+          text: `Check out this Story Seed: "${seed.setting} - ${seed.genre}"\n\n"${seed.seedText.substring(0, 120)}..."`,
+          url: shareUrl,
+        });
+        return;
+      } catch (err) {
+        // If they cancelled, do nothing. Otherwise, fallback.
+        if (err instanceof Error && err.name === "AbortError") return;
+      }
+    }
+    
+    // Clipboard fallback
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy share link: ", err);
+    }
+  };
+
   const isLiked = currentWriter ? seed.likedBy?.includes(currentWriter.writerId) : false;
+  const isFired = currentWriter ? seed.firedBy?.includes(currentWriter.writerId) : false;
   const isOwner = (currentWriter && seed.creatorWriterId === currentWriter.writerId) || 
                   locallyCreatedSeedIds.includes(seed.id);
 
@@ -92,7 +122,7 @@ export default function SeedCard({ seed, currentWriter, locallyCreatedSeedIds = 
         {/* Additional custom ideas weaving if exists */}
         {seed.additionalIdeas && (
           <div className="mt-3 p-2.5 bg-slate-950/60 rounded-lg border border-slate-800/40 text-[11px] text-slate-400">
-            <span className="font-semibold text-amber-400">Custom ideas incorporated:</span> "{seed.additionalIdeas}"
+            <span className={`font-semibold ${activeTheme ? activeTheme.accentText : 'text-amber-400'}`}>Custom ideas incorporated:</span> "{seed.additionalIdeas}"
           </div>
         )}
       </div>
@@ -101,7 +131,7 @@ export default function SeedCard({ seed, currentWriter, locallyCreatedSeedIds = 
       <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
           <div className="flex items-center gap-1">
-            <User size={12} className="text-amber-400" />
+            <User size={12} className={activeTheme ? activeTheme.accentText : "text-amber-400"} />
             <span className="font-medium text-slate-300 max-w-[120px] truncate">
               {seed.creatorName || "Anonymous Writer"} 
               {seed.creatorWriterId && ` (${seed.creatorWriterId})`}
@@ -118,11 +148,38 @@ export default function SeedCard({ seed, currentWriter, locallyCreatedSeedIds = 
           {/* Copy Button */}
           <button
             onClick={handleCopy}
-            title="Copy Seed to Clipboard"
+            title="Copy Seed Text to Clipboard"
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors cursor-pointer"
             id={`copy-btn-${seed.id}`}
           >
             {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+          </button>
+
+          {/* Share Button */}
+          <button
+            onClick={handleShare}
+            title={shared ? "Link Copied!" : "Share Deep Link"}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              shared ? "text-emerald-400 bg-emerald-950/20" : "text-slate-400 hover:text-white hover:bg-slate-900"
+            }`}
+            id={`share-btn-${seed.id}`}
+          >
+            {shared ? <Check size={14} className="text-emerald-400" /> : <Share2 size={14} />}
+          </button>
+
+          {/* Fire (Reaction) Button */}
+          <button
+            onClick={() => onFireToggle(seed.id)}
+            title={currentWriter ? "Spike the creative fire!" : "Sign In to Spark Fire"}
+            className={`p-1.5 rounded-lg flex items-center gap-1 text-xs font-semibold transition-colors cursor-pointer ${
+              isFired 
+                ? "text-orange-400 bg-orange-950/30 border border-orange-900/30" 
+                : "text-slate-400 hover:text-orange-400 hover:bg-orange-950/10"
+            }`}
+            id={`fire-btn-${seed.id}`}
+          >
+            <Flame size={14} fill={isFired ? "currentColor" : "none"} />
+            <span>{seed.fires || 0}</span>
           </button>
 
           {/* Like Button */}

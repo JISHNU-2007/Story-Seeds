@@ -22,10 +22,11 @@ import {
   UserCheck,
   MessageSquare,
   HeartHandshake,
-  Film
+  Film,
+  Palette
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Writer, StorySeed, GENRES_WITH_SETTINGS } from "./types";
+import { Writer, StorySeed, GENRES_WITH_SETTINGS, AppTheme, THEMES } from "./types";
 import AuthModal from "./components/AuthModal";
 import SeedGenerator from "./components/SeedGenerator";
 import SeedCard from "./components/SeedCard";
@@ -45,6 +46,15 @@ export default function App() {
   const [allWriters, setAllWriters] = useState<Writer[]>([]);
   const [onlyShowFriendsSeeds, setOnlyShowFriendsSeeds] = useState<boolean>(false);
 
+  // Deep linked seed state
+  const [sharedSeedId, setSharedSeedId] = useState<string | null>(null);
+
+  const handleClearSharedSeed = () => {
+    setSharedSeedId(null);
+    const newUrl = window.location.pathname;
+    window.history.replaceState(null, "", newUrl);
+  };
+
   // UI Modals / Drawer toggles
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalInitialTab, setAuthModalInitialTab] = useState<"signin" | "signup">("signin");
@@ -53,10 +63,20 @@ export default function App() {
   // Success alert toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Active theme state
+  const [activeThemeId, setActiveThemeId] = useState<string>("sunset");
+  const activeTheme = THEMES.find(t => t.id === activeThemeId) || THEMES[0];
+
   const generatorSectionRef = useRef<HTMLDivElement>(null);
 
   // Load writer session, local seeds and community details on boot
   useEffect(() => {
+    // 0. Theme load
+    const savedTheme = localStorage.getItem("story_seeds_theme");
+    if (savedTheme) {
+      setActiveThemeId(savedTheme);
+    }
+
     // 1. Session load
     const saved = localStorage.getItem("story_seeds_writer");
     if (saved) {
@@ -80,6 +100,14 @@ export default function App() {
     // 3. Fetch all story seeds and writers
     fetchSeeds();
     fetchAllWriters();
+
+    // 4. Parse deep link parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const sharedId = urlParams.get("seed");
+    if (sharedId) {
+      setSharedSeedId(sharedId);
+      showToast("Tuned sanctuary filters to deep-linked seed! ✨");
+    }
   }, []);
 
   const fetchSeeds = async () => {
@@ -146,6 +174,30 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error liking seed:", err);
+    }
+  };
+
+  const handleFireToggle = async (seedId: string) => {
+    if (!currentWriter) {
+      setAuthModalInitialTab("signin");
+      setAuthModalOpen(true);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/seeds/${seedId}/fire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ writerId: currentWriter.writerId })
+      });
+
+      if (response.ok) {
+        const updatedSeed = await response.json();
+        setSeeds(prev => prev.map(s => s.id === seedId ? updatedSeed : s));
+        showToast("Added your creative energy to this seed! 🔥");
+      }
+    } catch (err) {
+      console.error("Error toggling fire reaction:", err);
     }
   };
 
@@ -249,6 +301,11 @@ export default function App() {
 
   // Filter and search logic
   const filteredSeeds = seeds.filter(seed => {
+    // If a shared seed ID is active, bypass regular gallery filters to display the targeted seed
+    if (sharedSeedId) {
+      return seed.id === sharedSeedId;
+    }
+
     // 1. Tab filtering
     if (activeTab === "my-seeds") {
       const isLocalOwner = locallyCreatedSeedIds.includes(seed.id);
@@ -286,22 +343,22 @@ export default function App() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased relative overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
+    <div className={`min-h-screen bg-slate-950 text-slate-100 font-sans antialiased relative overflow-x-hidden ${activeTheme.selectionClass}`}>
       
       {/* 20-Second Cinematic Animated Film Loop Background */}
       <BackgroundMovie />
 
       {/* Decorative Warm Backlighting */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-[120px] pointer-events-none -mr-40 -mt-20" />
-      <div className="absolute top-[800px] left-0 w-[400px] h-[400px] bg-rose-500/5 rounded-full blur-[100px] pointer-events-none -ml-40" />
+      <div className={`absolute top-0 right-0 w-[500px] h-[500px] ${activeTheme.light1} rounded-full blur-[120px] pointer-events-none -mr-40 -mt-20`} />
+      <div className={`absolute top-[800px] left-0 w-[400px] h-[400px] ${activeTheme.light2} rounded-full blur-[100px] pointer-events-none -ml-40`} />
 
       {/* HEADER SECTION */}
       <header className="sticky top-0 z-40 bg-slate-950/70 backdrop-blur-md border-b border-slate-900/60 px-4 sm:px-8 py-4 flex items-center justify-between" id="app-header">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 bg-gradient-to-br from-amber-500 to-rose-500 text-white rounded-xl flex items-center justify-center shadow-md shadow-rose-500/10">
+          <div className={`w-9 h-9 bg-gradient-to-br ${activeTheme.gradientFrom} ${activeTheme.gradientTo} text-white rounded-xl flex items-center justify-center shadow-md ${activeTheme.glowColor}`}>
             <Feather size={18} />
           </div>
-          <span className="text-xl font-bold tracking-tight font-display bg-gradient-to-r from-amber-400 via-rose-400 to-indigo-400 bg-clip-text text-transparent">Story Seeds</span>
+          <span className={`text-xl font-bold tracking-tight font-display bg-gradient-to-r ${activeTheme.gradientText} bg-clip-text text-transparent`}>Story Seeds</span>
         </div>
 
         {/* Profile & Auth Status Top Right */}
@@ -312,7 +369,7 @@ export default function App() {
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 transition-all border border-slate-800 cursor-pointer"
               id="header-profile-btn"
             >
-              <div className="w-6 h-6 bg-gradient-to-br from-amber-500 to-rose-500 text-white rounded-full flex items-center justify-center font-bold text-xs">
+              <div className={`w-6 h-6 bg-gradient-to-br ${activeTheme.gradientFrom} ${activeTheme.gradientTo} text-white rounded-full flex items-center justify-center font-bold text-xs`}>
                 {currentWriter.name.charAt(0).toUpperCase()}
               </div>
               <span className="text-xs font-semibold text-slate-200 hidden sm:inline max-w-[100px] truncate">
@@ -323,6 +380,14 @@ export default function App() {
           ) : (
             <div className="flex items-center gap-2">
               <button
+                onClick={() => setProfileDrawerOpen(true)}
+                className="p-2 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white transition-all border border-slate-800 cursor-pointer"
+                id="header-guest-settings-btn"
+                title="Aesthetic Themes & Settings"
+              >
+                <Palette size={15} className={activeTheme.accentText} />
+              </button>
+              <button
                 onClick={() => handleOpenAuthTab("signin")}
                 className="text-xs font-semibold px-4 py-2 rounded-full text-slate-300 hover:text-white hover:bg-slate-900 transition-all cursor-pointer"
                 id="header-signin-btn"
@@ -331,7 +396,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => handleOpenAuthTab("signup")}
-                className="text-xs font-bold px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white hover:opacity-90 transition-all shadow-md shadow-rose-500/10 cursor-pointer"
+                className={`text-xs font-bold px-4 py-2 rounded-full ${activeTheme.buttonPrimary} text-white hover:opacity-90 transition-all shadow-md ${activeTheme.glowColor} cursor-pointer`}
                 id="header-signup-btn"
               >
                 Become a Writer
@@ -351,7 +416,7 @@ export default function App() {
             className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-full bg-slate-900 text-white text-xs font-medium shadow-xl flex items-center gap-2 border border-slate-800"
             id="toast-notification"
           >
-            <Sparkles size={14} className="text-amber-400" />
+            <Sparkles size={14} className={activeTheme.accentText} />
             <span>{toastMessage}</span>
           </motion.div>
         )}
@@ -388,7 +453,7 @@ export default function App() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-[10px] tracking-wider uppercase font-bold"
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full ${activeTheme.badgeClass} font-mono text-[10px] tracking-wider uppercase font-bold`}
           >
             <Sparkles size={12} className="animate-spin-slow" />
             Empowering the Literary Mind
@@ -401,8 +466,8 @@ export default function App() {
             className="text-4xl sm:text-6xl font-black font-display text-white tracking-tight leading-none"
           >
             Sow the Seeds of <span className="relative inline-block">
-              <span className="relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-rose-400 to-indigo-500">Dramatic Tension</span>
-              <span className="absolute left-0 right-0 bottom-1 h-2 bg-amber-500/20 -z-0" />
+              <span className={`relative z-10 text-transparent bg-clip-text bg-gradient-to-r ${activeTheme.gradientText}`}>Dramatic Tension</span>
+              <span className={`absolute left-0 right-0 bottom-1 h-2 ${activeTheme.accentBg} -z-0`} />
             </span>
           </motion.h1>
 
@@ -424,12 +489,12 @@ export default function App() {
           >
             <button
               onClick={scrollToGenerator}
-              className="px-10 py-5 rounded-full bg-slate-900 text-white font-bold font-display shadow-2xl hover:shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-3 border border-slate-800 text-base relative overflow-hidden cursor-pointer"
+              className={`px-10 py-5 rounded-full bg-slate-900 text-white font-bold font-display shadow-2xl hover:${activeTheme.glowColor} hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-3 border border-slate-800 text-base relative overflow-hidden cursor-pointer`}
               id="hero-create-story-btn"
             >
               {/* Highlight flash */}
               <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity" />
-              <Feather size={20} className="text-amber-400" />
+              <Feather size={20} className={activeTheme.accentText} />
               <span>CREATE A STORY SEED</span>
               <ArrowDown size={18} className="animate-bounce" />
             </button>
@@ -440,7 +505,7 @@ export default function App() {
                 <span>First time?</span>
                 <button 
                   onClick={() => handleOpenAuthTab("signup")}
-                  className="font-bold text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                  className={`font-bold ${activeTheme.accentText} hover:opacity-80 underline cursor-pointer`}
                   id="hero-signup-shortcut"
                 >
                   Join the Guild (Sign Up)
@@ -456,7 +521,7 @@ export default function App() {
               </div>
             ) : (
               <p className="text-xs text-slate-400">
-                Authenticated as <strong className="text-amber-400">{currentWriter.name} ({currentWriter.writerId})</strong>
+                Authenticated as <strong className={activeTheme.accentText}>{currentWriter.name} ({currentWriter.writerId})</strong>
               </p>
             )}
           </motion.div>
@@ -473,6 +538,7 @@ export default function App() {
               currentWriter={currentWriter}
               onSeedGenerated={handleNewSeedGenerated}
               onOpenAuth={() => handleOpenAuthTab("signup")}
+              activeTheme={activeTheme}
             />
           </div>
         </section>
@@ -483,7 +549,7 @@ export default function App() {
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
             <div>
               <h3 className="text-2xl font-bold font-display text-white flex items-center gap-2">
-                <BookMarked size={22} className="text-amber-400" />
+                <BookMarked size={22} className={activeTheme.accentText} />
                 The Conservatory
               </h3>
               <p className="text-xs text-slate-400 mt-1">
@@ -497,7 +563,7 @@ export default function App() {
                 onClick={() => setActiveTab("community")}
                 className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "community"
-                    ? "bg-[#0a0f1d] text-amber-400 border border-amber-500/30 shadow-md"
+                    ? `bg-[#0a0f1d] ${activeTheme.accentText} border ${activeTheme.accentBorder} shadow-md`
                     : "text-slate-400 hover:text-slate-100"
                 }`}
                 id="community-tab-btn"
@@ -516,7 +582,7 @@ export default function App() {
                 }}
                 className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "my-seeds"
-                    ? "bg-[#0a0f1d] text-amber-400 border border-amber-500/30 shadow-md"
+                    ? `bg-[#0a0f1d] ${activeTheme.accentText} border ${activeTheme.accentBorder} shadow-md`
                     : "text-slate-400 hover:text-slate-100"
                 }`}
                 id="my-seeds-tab-btn"
@@ -531,7 +597,7 @@ export default function App() {
                 }}
                 className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "writers-guild"
-                    ? "bg-[#0a0f1d] text-amber-400 border border-amber-500/30 shadow-md"
+                    ? `bg-[#0a0f1d] ${activeTheme.accentText} border ${activeTheme.accentBorder} shadow-md`
                     : "text-slate-400 hover:text-slate-100"
                 }`}
                 id="writers-guild-tab-btn"
@@ -546,7 +612,7 @@ export default function App() {
           <div className="bg-[#0a0f1d]/60 rounded-2xl p-4 border border-slate-800/80 shadow-lg flex flex-col md:flex-row gap-4 items-center mb-8">
             {/* Search Input */}
             <div className="relative w-full md:flex-1">
-              <Search className="absolute left-3 top-3 text-amber-400" size={16} />
+              <Search className={`absolute left-3 top-3 ${activeTheme.accentText}`} size={16} />
               <input
                 type="text"
                 value={searchQuery}
@@ -570,7 +636,7 @@ export default function App() {
                     onClick={() => setSelectedGenreFilter(genre)}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                       selectedGenreFilter === genre
-                        ? "bg-gradient-to-r from-amber-500 to-rose-500 text-white font-semibold border-transparent shadow-md"
+                        ? `${activeTheme.buttonPrimary} text-white font-semibold border-transparent shadow-md`
                         : "bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800"
                     }`}
                     id={`genre-filter-${genre}`}
@@ -585,13 +651,13 @@ export default function App() {
                     onClick={() => setOnlyShowFriendsSeeds(!onlyShowFriendsSeeds)}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer border ${
                       onlyShowFriendsSeeds
-                        ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                        ? `${activeTheme.accentBg} ${activeTheme.accentText} ${activeTheme.accentBorder}`
                         : "bg-slate-900/60 hover:bg-slate-800 text-slate-400 border-slate-800"
                     }`}
                     title="Only show story seeds from writers you have added to your guild"
                     id="friends-only-toggle-btn"
                   >
-                    <HeartHandshake size={12} className={onlyShowFriendsSeeds ? "text-amber-400" : "text-slate-400"} />
+                    <HeartHandshake size={12} className={onlyShowFriendsSeeds ? activeTheme.accentText : "text-slate-400"} />
                     <span>Friends Only</span>
                   </button>
                 )}
@@ -605,7 +671,7 @@ export default function App() {
               // ================= WRITERS GUILD VIEW =================
               <div key="writers-guild-view" className="space-y-6">
                 <div className="bg-[#0a0f1d]/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl mb-6">
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-amber-400 font-display flex items-center gap-2">
+                  <h4 className={`text-sm font-bold uppercase tracking-wider ${activeTheme.accentText} font-display flex items-center gap-2`}>
                     <Users size={16} />
                     <span>Guild Directory</span>
                   </h4>
@@ -650,7 +716,7 @@ export default function App() {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -15 }}
                             className={`p-5 rounded-2xl border bg-[#0a0f1d]/75 backdrop-blur-md flex flex-col justify-between gap-4 transition-all hover:border-slate-700/80 ${
-                              isSelf ? "border-amber-500/30 ring-1 ring-amber-500/20" : "border-slate-800/80"
+                              isSelf ? `${activeTheme.accentBorder} ring-1 ${activeTheme.accentBg}` : "border-slate-800/80"
                             }`}
                             id={`writer-card-${writer.writerId}`}
                           >
@@ -665,7 +731,7 @@ export default function App() {
                                     <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
                                       <span>{writer.name}</span>
                                       {isSelf && (
-                                        <span className="text-[9px] uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono font-bold">You</span>
+                                        <span className={`text-[9px] uppercase ${activeTheme.badgeClass} px-1.5 py-0.5 rounded font-mono font-bold`}>You</span>
                                       )}
                                     </h5>
                                     <span className="text-[10px] font-mono text-slate-500">{writer.writerId}</span>
@@ -673,7 +739,7 @@ export default function App() {
                                 </div>
 
                                 {/* Genre Badge */}
-                                <span className="text-[10px] uppercase font-bold bg-slate-900 px-2 py-1 rounded-lg text-amber-400/90 border border-slate-800">
+                                <span className={`text-[10px] uppercase font-bold bg-slate-900 px-2 py-1 rounded-lg ${activeTheme.accentText} border border-slate-800`}>
                                   {writer.favoriteGenre}
                                 </span>
                               </div>
@@ -718,7 +784,7 @@ export default function App() {
                                   )}
                                 </button>
                               ) : (
-                                <div className="flex-1 text-center py-2 text-[10px] font-mono text-amber-500/60 uppercase font-bold">
+                                <div className={`flex-1 text-center py-2 text-[10px] font-mono ${activeTheme.accentText} opacity-70 uppercase font-bold`}>
                                   Archivist Profile
                                 </div>
                               )}
@@ -749,7 +815,7 @@ export default function App() {
                                     const randomSpark = sparkTypes[Math.floor(Math.random() * sparkTypes.length)];
                                     showToast(`Sent a ${randomSpark} to Writer ${writer.name}! 🚀`);
                                   }}
-                                  className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 hover:text-amber-400 hover:bg-slate-800 transition-colors cursor-pointer"
+                                  className={`p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 hover:${activeTheme.accentText} hover:bg-slate-800 transition-colors cursor-pointer`}
                                   title={`Send creative spark to ${writer.name}`}
                                 >
                                   <MessageSquare size={13} />
@@ -780,6 +846,21 @@ export default function App() {
             ) : (
               // ================= SEEDS GALLERIES VIEW =================
               <div key="seeds-gallery-view">
+                {sharedSeedId && (
+                  <div className="mb-6 p-4 rounded-xl bg-orange-950/20 border border-orange-500/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="flex items-center gap-2 text-orange-400">
+                      <Sparkles size={16} />
+                      <span className="text-xs font-semibold">Viewing a deep-linked Story Seed shared with you!</span>
+                    </div>
+                    <button
+                      onClick={handleClearSharedSeed}
+                      className="px-3 py-1 bg-orange-900 hover:bg-orange-800 text-orange-100 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      View All Seeds
+                    </button>
+                  </div>
+                )}
+
                 {filteredSeeds.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="seeds-grid">
                     {filteredSeeds.map((seed) => (
@@ -789,6 +870,7 @@ export default function App() {
                         currentWriter={currentWriter}
                         locallyCreatedSeedIds={locallyCreatedSeedIds}
                         onLikeToggle={handleLikeToggle}
+                        onFireToggle={handleFireToggle}
                         onDelete={handleDeleteSeed}
                       />
                     ))}
@@ -850,7 +932,7 @@ export default function App() {
 
       {/* PROFILE DRAWER (Right Slide-out Drawer) */}
       <AnimatePresence>
-        {profileDrawerOpen && currentWriter && (
+        {profileDrawerOpen && (
           <>
             {/* Backdrop */}
             <motion.div
@@ -868,15 +950,17 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "tween", duration: 0.35, ease: "easeOut" }}
-              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm bg-[#0a0f1d] border-l border-slate-800 shadow-2xl p-6 flex flex-col justify-between"
+              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm bg-[#0a0f1d] border-l border-slate-800 shadow-2xl p-6 flex flex-col justify-between overflow-y-auto"
               id="profile-drawer-panel"
             >
-              <div>
+              <div className="flex-1 overflow-y-auto pr-1 -mr-1">
                 {/* Header info */}
                 <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-800/80">
                   <div className="flex items-center gap-2">
-                    <Award className="text-amber-400" size={18} />
-                    <span className="text-sm font-bold font-display text-white uppercase tracking-wide">Writer Profile</span>
+                    <Award className={activeTheme.accentText} size={18} />
+                    <span className="text-sm font-bold font-display text-white uppercase tracking-wide">
+                      {currentWriter ? "Writer Profile" : "Guest Sanctuary"}
+                    </span>
                   </div>
                   <button
                     onClick={() => setProfileDrawerOpen(false)}
@@ -886,67 +970,157 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Big Initials circle */}
-                <div className="flex flex-col items-center text-center my-6">
-                  <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-rose-500 text-white rounded-full flex items-center justify-center text-2xl font-black shadow-md">
-                    {currentWriter.name.charAt(0).toUpperCase()}
-                  </div>
-                  <h4 className="text-lg font-bold font-display text-white mt-3">{currentWriter.name}</h4>
-                  <span className="font-mono text-xs font-bold text-amber-400 tracking-wider mt-0.5">{currentWriter.writerId}</span>
-                </div>
-
-                {/* Detailed Information list */}
-                <div className="space-y-4 text-xs text-slate-300">
-                  <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
-                    <Mail size={14} className="text-slate-400 shrink-0" />
-                    <div>
-                      <span className="block text-[9px] uppercase text-slate-500">Writer Email</span>
-                      <span className="font-medium text-slate-100">{currentWriter.email}</span>
+                {currentWriter ? (
+                  <>
+                    {/* Big Initials circle */}
+                    <div className="flex flex-col items-center text-center my-6">
+                      <div className={`w-16 h-16 bg-gradient-to-br ${activeTheme.gradientFrom} ${activeTheme.gradientTo} text-white rounded-full flex items-center justify-center text-2xl font-black shadow-md`}>
+                        {currentWriter.name.charAt(0).toUpperCase()}
+                      </div>
+                      <h4 className="text-lg font-bold font-display text-white mt-3">{currentWriter.name}</h4>
+                      <span className={`font-mono text-xs font-bold ${activeTheme.accentText} tracking-wider mt-0.5`}>{currentWriter.writerId}</span>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
-                    <Phone size={14} className="text-slate-400 shrink-0" />
-                    <div>
-                      <span className="block text-[9px] uppercase text-slate-500">Writer Number</span>
-                      <span className="font-medium text-slate-100">{currentWriter.writerNumber}</span>
-                    </div>
-                  </div>
+                    {/* Detailed Information list */}
+                    <div className="space-y-4 text-xs text-slate-300">
+                      <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                        <Mail size={14} className="text-slate-400 shrink-0" />
+                        <div>
+                          <span className="block text-[9px] uppercase text-slate-500">Writer Email</span>
+                          <span className="font-medium text-slate-100">{currentWriter.email}</span>
+                        </div>
+                      </div>
 
-                  <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
-                    <Calendar size={14} className="text-slate-400 shrink-0" />
-                    <div>
-                      <span className="block text-[9px] uppercase text-slate-500">Date of Birth</span>
-                      <span className="font-medium text-slate-100">{currentWriter.dob}</span>
-                    </div>
-                  </div>
+                      <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                        <Phone size={14} className="text-slate-400 shrink-0" />
+                        <div>
+                          <span className="block text-[9px] uppercase text-slate-500">Writer Number</span>
+                          <span className="font-medium text-slate-100">{currentWriter.writerNumber}</span>
+                        </div>
+                      </div>
 
-                  <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
-                    <Feather size={14} className="text-slate-400 shrink-0" />
-                    <div>
-                      <span className="block text-[9px] uppercase text-slate-500">Favorite Genre</span>
-                      <span className="font-medium text-slate-100">{currentWriter.favoriteGenre}</span>
-                    </div>
-                  </div>
+                      <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                        <Calendar size={14} className="text-slate-400 shrink-0" />
+                        <div>
+                          <span className="block text-[9px] uppercase text-slate-500">Date of Birth</span>
+                          <span className="font-medium text-slate-100">{currentWriter.dob}</span>
+                        </div>
+                      </div>
 
-                  {currentWriter.bio && (
-                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80">
-                      <span className="block text-[9px] uppercase text-slate-500 mb-1">Writer Biography</span>
-                      <p className="font-serif italic text-slate-200 leading-relaxed">"{currentWriter.bio}"</p>
+                      <div className="flex items-center gap-3 p-2 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                        <Feather size={14} className="text-slate-400 shrink-0" />
+                        <div>
+                          <span className="block text-[9px] uppercase text-slate-500">Favorite Genre</span>
+                          <span className="font-medium text-slate-100">{currentWriter.favoriteGenre}</span>
+                        </div>
+                      </div>
+
+                      {currentWriter.bio && (
+                        <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                          <span className="block text-[9px] uppercase text-slate-500 mb-1">Writer Biography</span>
+                          <p className="font-serif italic text-slate-200 leading-relaxed">"{currentWriter.bio}"</p>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center text-center my-6 p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
+                    <div className="w-16 h-16 bg-slate-800 border border-slate-700/30 text-slate-400 rounded-full flex items-center justify-center text-2xl font-black shadow-inner">
+                      G
+                    </div>
+                    <h4 className="text-base font-bold font-display text-white mt-3">Guest Wordsmith</h4>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mt-1">Anonymous Mode</span>
+                    <p className="text-xs text-slate-400 mt-3 max-w-[240px] leading-relaxed">
+                      You are generating story seeds anonymously. Sign up or log in to customize your profile, build a directory listing, and track likes!
+                    </p>
+                    <button
+                      onClick={() => {
+                        setProfileDrawerOpen(false);
+                        handleOpenAuthTab("signup");
+                      }}
+                      className={`mt-4 px-5 py-2.5 rounded-full text-xs font-bold text-white ${activeTheme.buttonPrimary} shadow-lg transition-all hover:scale-105 active:scale-95`}
+                    >
+                      Join the Guild
+                    </button>
+                  </div>
+                )}
+
+                {/* THEME SELECTOR SECTION */}
+                <div className="mt-8 border-t border-slate-800/80 pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Palette className={activeTheme.accentText} size={16} />
+                    <h5 className="text-xs font-bold uppercase text-white tracking-wider">Sanctuary Theme</h5>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-2">
+                    {THEMES.map((t) => {
+                      const isSelected = t.id === activeThemeId;
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => {
+                            setActiveThemeId(t.id);
+                            localStorage.setItem("story_seeds_theme", t.id);
+                            showToast(`Aesthetic switched to ${t.name}! ✨`);
+                          }}
+                          className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
+                            isSelected
+                              ? `bg-slate-900 ${t.accentBorder} ${t.accentText} shadow-md font-semibold`
+                              : "bg-slate-950/40 text-slate-400 border-slate-800/60 hover:bg-slate-900/40 hover:text-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className={`w-3.5 h-3.5 rounded-full bg-gradient-to-br ${t.gradientFrom} ${t.gradientTo}`} />
+                            <div>
+                              <span className="text-xs block font-medium">{t.name}</span>
+                              <span className="text-[10px] block text-slate-500 font-mono">{t.colorName}</span>
+                            </div>
+                          </div>
+                          {isSelected && <Check size={14} className={t.accentText} />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              {/* Drawer bottom logout */}
-              <button
-                onClick={handleLogout}
-                className="w-full py-3 bg-rose-950/30 text-rose-400 hover:bg-rose-900/40 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer border border-rose-900/40"
-                id="drawer-logout-btn"
-              >
-                <LogOut size={14} />
-                <span>Log Out of Ledger</span>
-              </button>
+              {/* Drawer bottom actions */}
+              <div className="mt-8 pt-4 border-t border-slate-800/80">
+                {currentWriter ? (
+                  <button
+                    onClick={handleLogout}
+                    className="w-full py-3 bg-rose-950/30 text-rose-400 hover:bg-rose-900/40 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer border border-rose-900/40"
+                    id="drawer-logout-btn"
+                  >
+                    <LogOut size={14} />
+                    <span>Log Out of Ledger</span>
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setProfileDrawerOpen(false);
+                        handleOpenAuthTab("signin");
+                      }}
+                      className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer border border-slate-800"
+                      id="drawer-signin-btn"
+                    >
+                      <User size={13} />
+                      <span>Sign In</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setProfileDrawerOpen(false);
+                        handleOpenAuthTab("signup");
+                      }}
+                      className={`flex-1 py-3 ${activeTheme.buttonPrimary} text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer`}
+                      id="drawer-signup-btn"
+                    >
+                      <span>Register</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </>
         )}

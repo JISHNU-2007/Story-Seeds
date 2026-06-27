@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { Sparkles, Feather, HelpCircle, AlertCircle, RefreshCw, Type, ChevronRight, Compass } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { GENRES_WITH_SETTINGS, EMOTIONAL_TONES, Writer, StorySeed } from "../types";
+import { GENRES_WITH_SETTINGS, EMOTIONAL_TONES, Writer, StorySeed, AppTheme } from "../types";
 
 interface SeedGeneratorProps {
   currentWriter: Writer | null;
   onSeedGenerated: (newSeed: StorySeed) => void;
   onOpenAuth: () => void;
+  activeTheme?: AppTheme;
 }
 
-export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAuth }: SeedGeneratorProps) {
+export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAuth, activeTheme }: SeedGeneratorProps) {
   const [selectedGenre, setSelectedGenre] = useState<string>("Sci-Fi");
   const [customGenre, setCustomGenre] = useState<string>("");
   const [isCustomGenreActive, setIsCustomGenreActive] = useState<boolean>(false);
@@ -109,7 +110,22 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
       setAdditionalIdeas("");
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "An unexpected error occurred during generation.");
+      let errMsg = err.message || "An unexpected error occurred during generation.";
+      // Defensive parsing of raw JSON errors in case they bypass the backend formatting
+      try {
+        const jsonMatch = errMsg.match(/\{.*\}/s);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.error && parsed.error.message) {
+            errMsg = parsed.error.message;
+          } else if (parsed.message) {
+            errMsg = parsed.message;
+          }
+        }
+      } catch (e) {
+        // Not JSON format
+      }
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -122,10 +138,10 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
   return (
     <div className="w-full bg-[#0a0f1d]/85 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-slate-800/80 shadow-2xl relative" id="seed-generator-box">
       {/* Background radial highlight */}
-      <div className="absolute top-0 right-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className={`absolute top-0 right-1/4 w-96 h-96 ${activeTheme ? activeTheme.accentBg : 'bg-amber-500/10'} rounded-full blur-3xl pointer-events-none`} />
       
       <div className="flex items-center gap-3 mb-6 sm:mb-8 pb-4 border-b border-slate-800/80">
-        <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-400">
+        <div className={`p-2.5 ${activeTheme ? activeTheme.accentBg : 'bg-amber-500/10'} rounded-xl ${activeTheme ? activeTheme.accentText : 'text-amber-400'}`}>
           <Sparkles size={24} />
         </div>
         <div>
@@ -153,7 +169,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
         <div>
           <div className="flex justify-between items-center mb-3">
             <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">1</span>
+              <span className={`flex items-center justify-center w-5 h-5 rounded-full ${activeTheme ? activeTheme.accentBg : 'bg-amber-500/20'} ${activeTheme ? activeTheme.accentText : 'text-amber-400'} text-xs font-bold`}>1</span>
               Choose Genre
             </label>
             <button
@@ -162,7 +178,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
                 setIsCustomGenreActive(!isCustomGenreActive);
                 setCustomGenre("");
               }}
-              className="text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+              className={`text-xs font-medium ${activeTheme ? activeTheme.accentText : 'text-amber-400'} hover:opacity-80 transition-colors flex items-center gap-1 cursor-pointer`}
             >
               <Type size={12} />
               {isCustomGenreActive ? "Use Preset Genres" : "Write Custom Genre"}
@@ -202,7 +218,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
                     onClick={() => setSelectedGenre(genre)}
                     className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all text-left relative cursor-pointer ${
                       selectedGenre === genre && !isCustomGenreActive
-                        ? "bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 text-white border-transparent shadow-lg shadow-rose-500/20"
+                        ? (activeTheme ? `${activeTheme.buttonPrimary} text-white border-transparent shadow-lg shadow-rose-500/10` : "bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 text-white border-transparent shadow-lg shadow-rose-500/20")
                         : "bg-slate-900/60 text-slate-300 border-slate-800 hover:bg-slate-800/80 hover:text-white"
                     }`}
                   >
@@ -218,7 +234,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
         <div>
           <div className="flex justify-between items-center mb-3">
             <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">2</span>
+              <span className={`flex items-center justify-center w-5 h-5 rounded-full ${activeTheme ? activeTheme.accentBg : 'bg-amber-500/20'} ${activeTheme ? activeTheme.accentText : 'text-amber-400'} text-xs font-bold`}>2</span>
               Choose Setting
             </label>
             {!isCustomGenreActive && (
@@ -228,7 +244,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
                   setIsCustomSettingActive(!isCustomSettingActive);
                   setCustomSetting("");
                 }}
-                className="text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+                className={`text-xs font-medium ${activeTheme ? activeTheme.accentText : 'text-amber-400'} hover:opacity-80 transition-colors flex items-center gap-1 cursor-pointer`}
               >
                 <Compass size={12} />
                 {isCustomSettingActive ? "Use Preset Settings" : "Write Custom Setting"}
@@ -269,12 +285,12 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
                     onClick={() => setSelectedSetting(setting)}
                     className={`px-4 py-3 rounded-xl border text-xs font-semibold transition-all text-left flex items-center justify-between cursor-pointer ${
                       selectedSetting === setting && !isCustomSettingActive
-                        ? "bg-slate-900 border-amber-500/80 text-amber-400 shadow-md"
+                        ? (activeTheme ? `bg-slate-900 ${activeTheme.accentBorder} ${activeTheme.accentText} border shadow-md` : "bg-slate-900 border-amber-500/80 text-amber-400 shadow-md")
                         : "bg-slate-900/60 text-slate-300 border-slate-800/80 hover:bg-slate-800/60 hover:text-white"
                     }`}
                   >
                     <span>{setting}</span>
-                    <ChevronRight size={14} className={selectedSetting === setting ? "opacity-100 text-amber-400" : "opacity-0"} />
+                    <ChevronRight size={14} className={selectedSetting === setting ? `opacity-100 ${activeTheme ? activeTheme.accentText : 'text-amber-400'}` : "opacity-0"} />
                   </button>
                 ))}
               </motion.div>
@@ -286,7 +302,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
         <div>
           <div className="flex justify-between items-center mb-3">
             <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">3</span>
+              <span className={`flex items-center justify-center w-5 h-5 rounded-full ${activeTheme ? activeTheme.accentBg : 'bg-amber-500/20'} ${activeTheme ? activeTheme.accentText : 'text-amber-400'} text-xs font-bold`}>3</span>
               Choose Emotional Tone
             </label>
             <button
@@ -295,7 +311,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
                 setIsCustomToneActive(!isCustomToneActive);
                 setCustomTone("");
               }}
-              className="text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+              className={`text-xs font-medium ${activeTheme ? activeTheme.accentText : 'text-amber-400'} hover:opacity-80 transition-colors flex items-center gap-1 cursor-pointer`}
             >
               <Type size={12} />
               {isCustomToneActive ? "Use Presets" : "Write Custom Tone"}
@@ -334,7 +350,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
                     onClick={() => setSelectedTone(tone)}
                     className={`px-2.5 py-2 rounded-xl border text-[11px] font-semibold transition-all text-center leading-tight flex items-center justify-center min-h-[44px] cursor-pointer ${
                       selectedTone === tone && !isCustomToneActive
-                        ? "bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-600 text-white border-transparent shadow-md"
+                        ? (activeTheme ? `${activeTheme.buttonPrimary} text-white border-transparent shadow-md` : "bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-600 text-white border-transparent shadow-md")
                         : "bg-slate-900/60 text-slate-300 border-slate-800/80 hover:bg-slate-800/60 hover:text-white"
                     }`}
                   >
@@ -349,7 +365,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
         {/* SECTION 4: ADDITIONAL IDEAS */}
         <div>
           <label className="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
-            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">4</span>
+            <span className={`flex items-center justify-center w-5 h-5 rounded-full ${activeTheme ? activeTheme.accentBg : 'bg-amber-500/20'} ${activeTheme ? activeTheme.accentText : 'text-amber-400'} text-xs font-bold`}>4</span>
             Weave Custom Ideas (Optional)
           </label>
           <textarea
@@ -369,7 +385,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
               <button 
                 type="button" 
                 onClick={onOpenAuth}
-                className="text-amber-400 font-semibold hover:underline ml-1 cursor-pointer animate-pulse"
+                className={`${activeTheme ? activeTheme.accentText : 'text-amber-400'} font-semibold hover:underline ml-1 cursor-pointer animate-pulse`}
               >
                 Sign up / Sign in
               </button> to save seeds to your profile and build a writer portfolio.
@@ -382,7 +398,7 @@ export default function SeedGenerator({ currentWriter, onSeedGenerated, onOpenAu
             className={`w-full max-w-sm py-4 px-8 rounded-full font-bold font-display text-white transition-all shadow-lg flex items-center justify-center gap-3 relative overflow-hidden group cursor-pointer ${
               loading 
                 ? "bg-slate-800 cursor-not-allowed shadow-none" 
-                : "bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] active:scale-[0.98]"
+                : (activeTheme ? `${activeTheme.buttonPrimary} hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]` : "bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] active:scale-[0.98]")
             }`}
             id="generate-seed-btn"
           >
