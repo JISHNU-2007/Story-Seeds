@@ -13,6 +13,7 @@ export interface Writer {
   bio: string;
   createdAt: string;
   password?: string;
+  friends?: string[]; // array of friend writerIds
 }
 
 export interface StorySeed {
@@ -35,25 +36,44 @@ interface LocalDatabase {
   seeds: StorySeed[];
 }
 
-const LOCAL_DB_PATH = path.join(process.cwd(), "db.json");
+const LOCAL_DB_PATH_ROOT = path.join(process.cwd(), "db.json");
+const LOCAL_DB_PATH_TMP = "/tmp/db.json";
+
+let memoryDb: LocalDatabase = { writers: [], seeds: [] };
+let usedDbPath = LOCAL_DB_PATH_ROOT;
 
 function readLocalDb(): LocalDatabase {
   try {
-    if (fs.existsSync(LOCAL_DB_PATH)) {
-      const raw = fs.readFileSync(LOCAL_DB_PATH, "utf8");
+    if (fs.existsSync(usedDbPath)) {
+      const raw = fs.readFileSync(usedDbPath, "utf8");
+      return JSON.parse(raw);
+    } else if (usedDbPath !== LOCAL_DB_PATH_TMP && fs.existsSync(LOCAL_DB_PATH_TMP)) {
+      usedDbPath = LOCAL_DB_PATH_TMP;
+      const raw = fs.readFileSync(LOCAL_DB_PATH_TMP, "utf8");
+      return JSON.parse(raw);
+    } else if (fs.existsSync(LOCAL_DB_PATH_ROOT)) {
+      const raw = fs.readFileSync(LOCAL_DB_PATH_ROOT, "utf8");
       return JSON.parse(raw);
     }
   } catch (error) {
-    console.error("Error reading local db file, using fresh db:", error);
+    console.error("Error reading local db file, using memory db:", error);
   }
-  return { writers: [], seeds: [] };
+  return memoryDb;
 }
 
 function writeLocalDb(data: LocalDatabase) {
+  memoryDb = data; // Keep in memory in-sync
   try {
-    fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2), "utf8");
-  } catch (error) {
-    console.error("Error writing local db file:", error);
+    fs.writeFileSync(usedDbPath, JSON.stringify(data, null, 2), "utf8");
+  } catch (error: any) {
+    console.warn(`Failed to write to local db path ${usedDbPath}: ${error.message}. Falling back to /tmp/db.json...`);
+    try {
+      fs.writeFileSync(LOCAL_DB_PATH_TMP, JSON.stringify(data, null, 2), "utf8");
+      usedDbPath = LOCAL_DB_PATH_TMP;
+      console.log("Successfully switched db persistence path to /tmp/db.json");
+    } catch (tmpErr: any) {
+      console.error("Failed to write db to /tmp/db.json. Running strictly in-memory.", tmpErr.message);
+    }
   }
 }
 
@@ -90,26 +110,34 @@ export async function initDb() {
 // ----------------------
 export async function getWriterByEmail(email: string): Promise<Writer | null> {
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<Writer>("writers");
-    const writer = await coll.findOne({ email: email.toLowerCase().trim() });
-    return writer;
-  } else {
-    const db = readLocalDb();
-    const writer = db.writers.find(w => w.email.toLowerCase().trim() === email.toLowerCase().trim());
-    return writer || null;
+    try {
+      const coll = mongoDb.collection<Writer>("writers");
+      const writer = await coll.findOne({ email: email.toLowerCase().trim() });
+      return writer;
+    } catch (err) {
+      console.error("MongoDB getWriterByEmail failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
   }
+  const db = readLocalDb();
+  const writer = db.writers.find(w => w.email.toLowerCase().trim() === email.toLowerCase().trim());
+  return writer || null;
 }
 
 export async function getWriterById(writerId: string): Promise<Writer | null> {
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<Writer>("writers");
-    const writer = await coll.findOne({ writerId: writerId });
-    return writer;
-  } else {
-    const db = readLocalDb();
-    const writer = db.writers.find(w => w.writerId === writerId);
-    return writer || null;
+    try {
+      const coll = mongoDb.collection<Writer>("writers");
+      const writer = await coll.findOne({ writerId: writerId });
+      return writer;
+    } catch (err) {
+      console.error("MongoDB getWriterById failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
   }
+  const db = readLocalDb();
+  const writer = db.writers.find(w => w.writerId === writerId);
+  return writer || null;
 }
 
 export async function createWriter(writerData: Omit<Writer, "writerId" | "createdAt">): Promise<Writer> {
@@ -126,15 +154,74 @@ export async function createWriter(writerData: Omit<Writer, "writerId" | "create
   };
 
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<Writer>("writers");
-    await coll.insertOne(newWriter);
-  } else {
-    const db = readLocalDb();
-    db.writers.push(newWriter);
-    writeLocalDb(db);
+    try {
+      const coll = mongoDb.collection<Writer>("writers");
+      await coll.insertOne(newWriter);
+      return newWriter;
+    } catch (err) {
+      console.error("MongoDB createWriter failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
   }
 
+  const db = readLocalDb();
+  db.writers.push(newWriter);
+  writeLocalDb(db);
+
   return newWriter;
+}
+
+export async function getAllWriters(): Promise<Writer[]> {
+  if (isMongoActive && mongoDb) {
+    try {
+      const coll = mongoDb.collection<Writer>("writers");
+      return await coll.find({}).toArray();
+    } catch (err) {
+      console.error("MongoDB getAllWriters failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
+  }
+  const db = readLocalDb();
+  return db.writers || [];
+}
+
+export async function toggleFriend(writerId: string, friendId: string): Promise<Writer | null> {
+  if (isMongoActive && mongoDb) {
+    try {
+      const coll = mongoDb.collection<Writer>("writers");
+      const writer = await coll.findOne({ writerId: writerId });
+      if (writer) {
+        const friends = writer.friends || [];
+        const index = friends.indexOf(friendId);
+        if (index > -1) {
+          friends.splice(index, 1);
+        } else {
+          friends.push(friendId);
+        }
+        await coll.updateOne({ writerId: writerId }, { $set: { friends: friends } });
+        return { ...writer, friends };
+      }
+    } catch (err) {
+      console.error("MongoDB toggleFriend failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
+  }
+
+  const db = readLocalDb();
+  const idx = db.writers.findIndex(w => w.writerId === writerId);
+  if (idx === -1) return null;
+
+  const writer = db.writers[idx];
+  const friends = writer.friends || [];
+  const index = friends.indexOf(friendId);
+  if (index > -1) {
+    friends.splice(index, 1);
+  } else {
+    friends.push(friendId);
+  }
+  writer.friends = friends;
+  writeLocalDb(db);
+  return writer;
 }
 
 // ----------------------
@@ -142,24 +229,32 @@ export async function createWriter(writerData: Omit<Writer, "writerId" | "create
 // ----------------------
 export async function getAllSeeds(): Promise<StorySeed[]> {
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<StorySeed>("seeds");
-    return await coll.find({}).sort({ createdAt: -1 }).toArray();
-  } else {
-    const db = readLocalDb();
-    return [...db.seeds].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    try {
+      const coll = mongoDb.collection<StorySeed>("seeds");
+      return await coll.find({}).sort({ createdAt: -1 }).toArray();
+    } catch (err) {
+      console.error("MongoDB getAllSeeds failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
   }
+  const db = readLocalDb();
+  return [...db.seeds].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export async function getSeedsByWriter(writerId: string): Promise<StorySeed[]> {
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<StorySeed>("seeds");
-    return await coll.find({ creatorWriterId: writerId }).sort({ createdAt: -1 }).toArray();
-  } else {
-    const db = readLocalDb();
-    return db.seeds
-      .filter(s => s.creatorWriterId === writerId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    try {
+      const coll = mongoDb.collection<StorySeed>("seeds");
+      return await coll.find({ creatorWriterId: writerId }).sort({ createdAt: -1 }).toArray();
+    } catch (err) {
+      console.error("MongoDB getSeedsByWriter failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
   }
+  const db = readLocalDb();
+  return db.seeds
+    .filter(s => s.creatorWriterId === writerId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export async function createSeed(seedData: Omit<StorySeed, "id" | "createdAt" | "likes" | "likedBy">): Promise<StorySeed> {
@@ -175,66 +270,93 @@ export async function createSeed(seedData: Omit<StorySeed, "id" | "createdAt" | 
   };
 
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<StorySeed>("seeds");
-    await coll.insertOne(newSeed);
-  } else {
-    const db = readLocalDb();
-    db.seeds.push(newSeed);
-    writeLocalDb(db);
+    try {
+      const coll = mongoDb.collection<StorySeed>("seeds");
+      await coll.insertOne(newSeed);
+      return newSeed;
+    } catch (err) {
+      console.error("MongoDB createSeed failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
   }
+
+  const db = readLocalDb();
+  db.seeds.push(newSeed);
+  writeLocalDb(db);
 
   return newSeed;
 }
 
 export async function toggleLikeSeed(seedId: string, writerId: string): Promise<StorySeed | null> {
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<StorySeed>("seeds");
-    const seed = await coll.findOne({ id: seedId });
-    if (!seed) return null;
+    try {
+      const coll = mongoDb.collection<StorySeed>("seeds");
+      const seed = await coll.findOne({ id: seedId });
+      if (seed) {
+        const likedBy = seed.likedBy || [];
+        const index = likedBy.indexOf(writerId);
+        if (index > -1) {
+          likedBy.splice(index, 1);
+        } else {
+          likedBy.push(writerId);
+        }
 
-    const likedBy = seed.likedBy || [];
-    const index = likedBy.indexOf(writerId);
-    if (index > -1) {
-      likedBy.splice(index, 1);
-    } else {
-      likedBy.push(writerId);
+        const likes = likedBy.length;
+        await coll.updateOne({ id: seedId }, { $set: { likedBy, likes } });
+        return { ...seed, likedBy, likes };
+      }
+    } catch (err) {
+      console.error("MongoDB toggleLikeSeed failed, falling back to local JSON:", err);
+      isMongoActive = false;
     }
-
-    const likes = likedBy.length;
-    await coll.updateOne({ id: seedId }, { $set: { likedBy, likes } });
-    return { ...seed, likedBy, likes };
-  } else {
-    const db = readLocalDb();
-    const seedIndex = db.seeds.findIndex(s => s.id === seedId);
-    if (seedIndex === -1) return null;
-
-    const seed = db.seeds[seedIndex];
-    const likedBy = seed.likedBy || [];
-    const index = likedBy.indexOf(writerId);
-    if (index > -1) {
-      likedBy.splice(index, 1);
-    } else {
-      likedBy.push(writerId);
-    }
-
-    seed.likedBy = likedBy;
-    seed.likes = likedBy.length;
-    
-    writeLocalDb(db);
-    return seed;
   }
+
+  const db = readLocalDb();
+  const seedIndex = db.seeds.findIndex(s => s.id === seedId);
+  if (seedIndex === -1) return null;
+
+  const seed = db.seeds[seedIndex];
+  const likedBy = seed.likedBy || [];
+  const index = likedBy.indexOf(writerId);
+  if (index > -1) {
+    likedBy.splice(index, 1);
+  } else {
+    likedBy.push(writerId);
+  }
+
+  seed.likedBy = likedBy;
+  seed.likes = likedBy.length;
+  
+  writeLocalDb(db);
+  return seed;
 }
 
-export async function deleteSeed(seedId: string, writerId: string): Promise<boolean> {
+export async function deleteSeed(seedId: string, writerId: string | null): Promise<boolean> {
   if (isMongoActive && mongoDb) {
-    const coll = mongoDb.collection<StorySeed>("seeds");
-    const result = await coll.deleteOne({ id: seedId, creatorWriterId: writerId });
-    return result.deletedCount > 0;
-  } else {
-    const db = readLocalDb();
-    const originalLength = db.seeds.length;
-    db.seeds = db.seeds.filter(s => !(s.id === seedId && s.creatorWriterId === writerId));
-    writeLocalDb(db);
-    return db.seeds.length < originalLength;
+    try {
+      const coll = mongoDb.collection<StorySeed>("seeds");
+      const seed = await coll.findOne({ id: seedId });
+      if (!seed) return false;
+      // If seed is anonymous, allow anyone to delete it. If it has an owner, check matching writerId
+      if (seed.creatorWriterId === null || (writerId !== null && seed.creatorWriterId === writerId)) {
+        const result = await coll.deleteOne({ id: seedId });
+        return result.deletedCount > 0;
+      }
+      return false;
+    } catch (err) {
+      console.error("MongoDB deleteSeed failed, falling back to local JSON:", err);
+      isMongoActive = false;
+    }
   }
+
+  const db = readLocalDb();
+  const originalLength = db.seeds.length;
+  db.seeds = db.seeds.filter(s => {
+    if (s.id !== seedId) return true;
+    // For the target seed:
+    if (s.creatorWriterId === null) return false; // Allow deleting anonymous seeds
+    return s.creatorWriterId !== writerId; // Allow deleting if writerId matches
+  });
+  writeLocalDb(db);
+  return db.seeds.length < originalLength;
 }

@@ -6,12 +6,13 @@ import { StorySeed, Writer } from "../types";
 interface SeedCardProps {
   seed: StorySeed;
   currentWriter: Writer | null;
+  locallyCreatedSeedIds?: string[];
   onLikeToggle: (seedId: string) => void;
   onDelete: (seedId: string) => void;
   key?: string;
 }
 
-export default function SeedCard({ seed, currentWriter, onLikeToggle, onDelete }: SeedCardProps) {
+export default function SeedCard({ seed, currentWriter, locallyCreatedSeedIds = [], onLikeToggle, onDelete }: SeedCardProps) {
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -26,7 +27,8 @@ export default function SeedCard({ seed, currentWriter, onLikeToggle, onDelete }
   };
 
   const isLiked = currentWriter ? seed.likedBy?.includes(currentWriter.writerId) : false;
-  const isOwner = currentWriter && seed.creatorWriterId === currentWriter.writerId;
+  const isOwner = (currentWriter && seed.creatorWriterId === currentWriter.writerId) || 
+                  locallyCreatedSeedIds.includes(seed.id);
 
   // Formatting date
   const formatDate = (isoString: string) => {
@@ -49,7 +51,7 @@ export default function SeedCard({ seed, currentWriter, onLikeToggle, onDelete }
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.4 }}
-      className="relative overflow-hidden rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 p-6 flex flex-col justify-between dark:bg-slate-900 dark:border-slate-800/80"
+      className="relative overflow-hidden rounded-2xl bg-[#0a0f1d]/60 border border-slate-800/80 shadow-lg hover:border-slate-700/80 transition-all duration-300 p-6 flex flex-col justify-between backdrop-blur-md"
       id={`seed-card-${seed.id}`}
     >
       {/* Accent color strip based on Genre */}
@@ -65,48 +67,48 @@ export default function SeedCard({ seed, currentWriter, onLikeToggle, onDelete }
       {/* Meta Header badges */}
       <div>
         <div className="flex flex-wrap gap-2 mb-4">
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono tracking-wider font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200/40 dark:border-slate-700/50">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono tracking-wider font-semibold uppercase bg-slate-900 text-slate-200 border border-slate-800">
             {seed.genre}
           </span>
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono tracking-wider font-semibold uppercase bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-200/20 dark:border-amber-900/20">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono tracking-wider font-semibold uppercase bg-amber-950/40 text-amber-400 border border-amber-900/20">
             {seed.emotionalTone}
           </span>
         </div>
 
         {/* Setting title */}
-        <h4 className="text-sm font-semibold font-display text-slate-700 dark:text-slate-300 mb-2 leading-snug">
+        <h4 className="text-sm font-semibold font-display text-slate-200 mb-2 leading-snug">
           Setting: {seed.setting}
         </h4>
 
         {/* The Seed Text itself (rendered elegantly) */}
         <div className="relative mb-6">
-          <span className="absolute -top-4 -left-3 text-5xl font-serif text-slate-100 dark:text-slate-800/40 select-none">“</span>
-          <p className="text-slate-800 dark:text-slate-200 text-sm font-serif italic leading-relaxed relative z-10 whitespace-pre-line pl-1">
+          <span className="absolute -top-4 -left-3 text-5xl font-serif text-slate-900/60 select-none">“</span>
+          <p className="text-slate-100 text-sm font-serif italic leading-relaxed relative z-10 whitespace-pre-line pl-1">
             {seed.seedText}
           </p>
-          <span className="absolute -bottom-10 -right-2 text-5xl font-serif text-slate-100 dark:text-slate-800/40 select-none">”</span>
+          <span className="absolute -bottom-10 -right-2 text-5xl font-serif text-slate-900/60 select-none">”</span>
         </div>
 
         {/* Additional custom ideas weaving if exists */}
         {seed.additionalIdeas && (
-          <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-950/60 rounded-lg border border-slate-100 dark:border-slate-800/40 text-[11px] text-slate-500 dark:text-slate-400">
-            <span className="font-semibold text-slate-700 dark:text-slate-300">Custom ideas incorporated:</span> "{seed.additionalIdeas}"
+          <div className="mt-3 p-2.5 bg-slate-950/60 rounded-lg border border-slate-800/40 text-[11px] text-slate-400">
+            <span className="font-semibold text-amber-400">Custom ideas incorporated:</span> "{seed.additionalIdeas}"
           </div>
         )}
       </div>
 
       {/* Card Footer details */}
-      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-        <div className="flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500">
+      <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between">
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
           <div className="flex items-center gap-1">
-            <User size={12} />
-            <span className="font-medium text-slate-600 dark:text-slate-400 max-w-[120px] truncate">
+            <User size={12} className="text-amber-400" />
+            <span className="font-medium text-slate-300 max-w-[120px] truncate">
               {seed.creatorName || "Anonymous Writer"} 
               {seed.creatorWriterId && ` (${seed.creatorWriterId})`}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <Calendar size={12} />
+            <Calendar size={12} className="text-slate-500" />
             <span>{formatDate(seed.createdAt)}</span>
           </div>
         </div>
@@ -117,7 +119,7 @@ export default function SeedCard({ seed, currentWriter, onLikeToggle, onDelete }
           <button
             onClick={handleCopy}
             title="Copy Seed to Clipboard"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors cursor-pointer"
             id={`copy-btn-${seed.id}`}
           >
             {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
@@ -129,8 +131,8 @@ export default function SeedCard({ seed, currentWriter, onLikeToggle, onDelete }
             title={currentWriter ? "Like Seed" : "Sign In to Like Seeds"}
             className={`p-1.5 rounded-lg flex items-center gap-1 text-xs font-semibold transition-colors cursor-pointer ${
               isLiked 
-                ? "text-rose-500 bg-rose-50 dark:bg-rose-950/30" 
-                : "text-slate-400 hover:text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/10"
+                ? "text-rose-400 bg-rose-950/30 border border-rose-900/30" 
+                : "text-slate-400 hover:text-rose-400 hover:bg-rose-950/10"
             }`}
             id={`like-btn-${seed.id}`}
           >
@@ -147,7 +149,7 @@ export default function SeedCard({ seed, currentWriter, onLikeToggle, onDelete }
                 }
               }}
               title="Delete Seed"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/10 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer"
               id={`delete-btn-${seed.id}`}
             >
               <Trash2 size={14} />

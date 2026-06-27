@@ -12,8 +12,10 @@ import {
   getSeedsByWriter, 
   createSeed, 
   toggleLikeSeed, 
-  deleteSeed 
-} from "../server/db.js";
+  deleteSeed,
+  getAllWriters,
+  toggleFriend
+} from "../server/db";
 
 // Load environment variables
 dotenv.config();
@@ -23,15 +25,25 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Initialize AI Studio Gemini Client
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+// Lazy-loaded Gemini client
+let aiInstance: GoogleGenAI | null = null;
+function getAi() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not configured in the environment. Please add it via the Settings secrets panel.");
     }
+    aiInstance = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
   }
-});
+  return aiInstance;
+}
 
 // Initialize Database (Atlas Connection if URI available, else fallback to JSON file)
 initDb().catch((err) => {
@@ -97,6 +109,37 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+// Google Sign-In / Sign-Up Action
+app.post("/api/auth/google", async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || !name) {
+      return res.status(400).json({ error: "Missing Google account details." });
+    }
+
+    let writer = await getWriterByEmail(email);
+    if (!writer) {
+      // Create a brand new writer profile automatically
+      const randomDigits = Math.floor(1000 + Math.random() * 9000);
+      writer = await createWriter({
+        name,
+        writerNumber: `+1 (555) 012-${randomDigits}`,
+        dob: new Date(Date.now() - 25 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Default DOB (approx 25 yrs ago)
+        email,
+        favoriteGenre: "Fantasy", // default genre
+        bio: `Enthusiastic Guild member who embarked via secure Google Sign-In.`,
+        password: Math.random().toString(36).slice(-8), // random placeholder password
+      });
+    }
+
+    const { password: _, ...safeWriter } = writer as any;
+    res.json({ success: true, writer: safeWriter });
+  } catch (error: any) {
+    console.error("Google login error:", error);
+    res.status(500).json({ error: error.message || "Internal server error during Google Auth." });
+  }
+});
+
 // Get specific writer details
 app.get("/api/writers/:id", async (req, res) => {
   try {
@@ -105,6 +148,35 @@ app.get("/api/writers/:id", async (req, res) => {
       return res.status(404).json({ error: "Writer not found." });
     }
     const { password: _, ...safeWriter } = writer;
+    res.json(safeWriter);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List all registered writers (excluding passwords)
+app.get("/api/writers", async (req, res) => {
+  try {
+    const writers = await getAllWriters();
+    const safeWriters = writers.map(({ password, ...rest }) => rest);
+    res.json(safeWriters);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Toggle a friend for a writer
+app.post("/api/writers/:id/friends", async (req, res) => {
+  try {
+    const { friendId } = req.body;
+    if (!friendId) {
+      return res.status(400).json({ error: "Friend ID is required." });
+    }
+    const updatedWriter = await toggleFriend(req.params.id, friendId);
+    if (!updatedWriter) {
+      return res.status(404).json({ error: "Writer not found." });
+    }
+    const { password: _, ...safeWriter } = updatedWriter;
     res.json(safeWriter);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -141,6 +213,7 @@ A Story Seed is a short, one-paragraph description of a community, place, or sit
 It must set up a conflict or mystery without resolving it. Write in an evocative, highly atmospheric style with rich sensory details.
 Keep it strictly under 5-6 sentences (one paragraph). Output ONLY the paragraph, nothing else.`;
 
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
@@ -219,10 +292,7 @@ app.post("/api/seeds/:id/like", async (req, res) => {
 app.delete("/api/seeds/:id", async (req, res) => {
   try {
     const { writerId } = req.body;
-    if (!writerId) {
-      return res.status(400).json({ error: "Writer ID is required to delete." });
-    }
-    const success = await deleteSeed(req.params.id, writerId);
+    const success = await deleteSeed(req.params.id, writerId || null);
     if (!success) {
       return res.status(404).json({ error: "Seed not found or you are not authorized to delete it." });
     }
