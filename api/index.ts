@@ -21,7 +21,6 @@ import {
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
 
 app.use(express.json());
 
@@ -387,32 +386,5 @@ app.delete("/api/seeds/:id", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-// ----------------------
-// VITE / STATIC MIDDLEWARE
-// ----------------------
-
-if (process.env.NODE_ENV !== "production") {
-  import("vite").then(({ createServer: createViteServer }) => {
-    createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    }).then((vite) => {
-      app.use(vite.middlewares);
-    });
-  });
-} else {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
-  });
-}
-
-if (!process.env.VERCEL) {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Story Seeds Server] Running on http://0.0.0.0:${PORT}`);
-  });
-}
 
 export default app;
