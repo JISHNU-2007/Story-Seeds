@@ -49,7 +49,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialTab =
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      let data: any;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const errorText = await response.text();
+        throw new Error(errorText || `Server returned error status ${response.status}`);
+      }
+
       if (!response.ok) {
         throw new Error(data.error || "Login failed");
       }
@@ -83,7 +91,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialTab =
         }),
       });
 
-      const data = await response.json();
+      let data: any;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const errorText = await response.text();
+        throw new Error(errorText || `Server returned error status ${response.status}`);
+      }
+
       if (!response.ok) {
         throw new Error(data.error || "Signup failed");
       }
@@ -108,7 +124,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, initialTab =
         body: JSON.stringify({ email: googleEmail, name: googleName }),
       });
 
-      const data = await response.json();
+      let data: any;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const errorText = await response.text();
+        throw new Error(errorText || `Server returned error status ${response.status}`);
+      }
+
       if (!response.ok) {
         throw new Error(data.error || "Google Authentication failed");
       }
